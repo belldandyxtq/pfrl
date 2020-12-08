@@ -55,7 +55,6 @@ def train_loop(
             logger.info("Saved the current model to %s", dirname)
 
     try:
-
         episode_r = 0
         global_t = 0
         local_t = 0
@@ -64,8 +63,9 @@ def train_loop(
         episode_len = 0
         successful = False
 
+        print(f"### ====== Actor start (pid {os.getpid()}, idx={process_idx}) pipe={agent.pipe}", flush=True)
         while True:
-
+            print(f"### (pid {os.getpid()}, idx={process_idx}) global_t={global_t}, local_t={local_t} (steps={steps})", flush=True)
             # a_t
             a = agent.act(obs)
             # o_{t+1}, r_{t+1}
@@ -110,6 +110,7 @@ def train_loop(
                         successful = True
                         # Break immediately in order to avoid an additional
                         # call of agent.act_and_train
+                        print(f"### <<break>> (pid={os.getpid()}, idx={process_idx}) eval_score >= successful_score", flush=True)
                         break
 
                 with episodes_counter.get_lock():
@@ -117,6 +118,7 @@ def train_loop(
                     global_episodes = episodes_counter.value
 
                 if global_t >= steps or stop_event.is_set():
+                    print(f"### <<break>> (pid={os.getpid()}, idx={process_idx}) global_t={global_t}, local_t={local_t} (steps={steps})", flush=True)
                     break
 
                 # Start a new episode
@@ -125,18 +127,22 @@ def train_loop(
                 obs = env.reset()
 
             if process_idx == 0 and exception_event.is_set():
-                logger.exception("An exception detected, exiting")
+                logger.exception(f"An exception detected (pid={os.getpid()}, idx={process_idx}), exiting")
                 save_model()
                 kill_all()
 
     except (Exception, KeyboardInterrupt):
         save_model()
         raise
+    
+    print(f"### After loop (pid {os.getpid()}, idx={process_idx} fileno={agent.pipe.fileno()}) global_t={global_t}, local_t={local_t} (steps={steps})", flush=True)
 
     if global_t == steps:
         # Save the final model
         dirname = os.path.join(outdir, "{}_finish".format(steps))
+        print(f"### Before agent.save() (pid {os.getpid()}, idx={process_idx} pipe.fileno={agent.pipe.fileno()})")
         agent.save(dirname)
+        print(f"### After agent.save() (pid {os.getpid()}, idx={process_idx}) pipe.fileno={agent.pipe.fileno()})")
         logger.info("Saved the final agent to %s", dirname)
 
     if successful:
@@ -144,6 +150,12 @@ def train_loop(
         dirname = os.path.join(outdir, "successful")
         agent.save(dirname)
         logger.info("Saved the successful agent to %s", dirname)
+
+    print(f"### After loop 2 (pid {os.getpid()}, idx={process_idx} fileno={agent.pipe.fileno()}) global_t={global_t}, local_t={local_t} (steps={steps})")
+    import time
+    time.sleep(0.1)
+    agent.pipe.close()
+    print(f"### After loop 3 (pid {os.getpid()}, idx={process_idx} fileno=N/A global_t={global_t}, local_t={local_t} (steps={steps})")
 
 
 def train_agent_async(
