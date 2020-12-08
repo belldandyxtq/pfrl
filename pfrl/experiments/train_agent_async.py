@@ -152,9 +152,8 @@ def train_loop(
         logger.info("Saved the successful agent to %s", dirname)
 
     print(f"### After loop 2 (pid {os.getpid()}, idx={process_idx} fileno={agent.pipe.fileno()}) global_t={global_t}, local_t={local_t} (steps={steps})")
-    import time
-    time.sleep(0.1)
-    agent.pipe.close()
+    agent.pipe.send(("end", "I am going to die"))
+    agent.pipe.recv()
     print(f"### After loop 3 (pid {os.getpid()}, idx={process_idx} fileno=N/A global_t={global_t}, local_t={local_t} (steps={steps})")
 
 
