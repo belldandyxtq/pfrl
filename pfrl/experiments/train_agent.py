@@ -107,7 +107,7 @@ def train_agent(
                     obs = env.reset()
                 if checkpoint_freq and t % checkpoint_freq == 0:
                     save_agent(agent, t, outdir, logger, suffix="_checkpoint")
-        prof.export_chrome_trace("original_learner.json")
+        prof.export_chrome_trace(os.path.join(os.getenv("OUTDIR", default=os.getcwd()), "original_learner.json"))
 
     except (Exception, KeyboardInterrupt):
         # Save the current model before being killed

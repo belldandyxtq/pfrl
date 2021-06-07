@@ -134,7 +134,7 @@ def train_loop(
                     logger.exception("An exception detected, exiting")
                     save_model()
                     kill_all()
-        prof.export_chrome_trace("actor{}.json".format(os.getpid()))
+        prof.export_chrome_trace(os.path.join(os.getenv("OUTDIR", default=os.getcwd()), "actor{}.json".format(os.getpid())))
 
     except (Exception, KeyboardInterrupt):
         save_model()
