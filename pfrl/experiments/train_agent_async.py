@@ -3,6 +3,7 @@ import os
 import signal
 import subprocess
 import sys
+import grpc
 
 import numpy as np
 import torch
@@ -135,6 +136,9 @@ def train_loop(
                     save_model()
                     kill_all()
         prof.export_chrome_trace(os.path.join(os.getenv("OUTDIR", default=os.getcwd()), "actor{}.json".format(os.getpid())))
+    except (grpc._channel._InactiveRpcError):
+        prof.export_chrome_trace(os.path.join(os.getenv("OUTDIR", default=os.getcwd()), "actor{}.json".format(os.getpid())))
+        raise
 
     except (Exception, KeyboardInterrupt):
         save_model()
