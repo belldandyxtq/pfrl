@@ -3,6 +3,8 @@ import os
 
 from pfrl.experiments.evaluator import Evaluator, save_agent
 from pfrl.utils.ask_yes_no import ask_yes_no
+import torch.autograd.profiler as profiler
+from torch.autograd.profiler import record_function
 
 
 def save_agent_replay_buffer(agent, t, outdir, suffix="", logger=None):
@@ -51,56 +53,61 @@ def train_agent(
     eval_stats_history = []  # List of evaluation episode stats dict
     episode_len = 0
     try:
-        while t < steps:
+        with profiler.profile() as prof:
+            while t < steps:
 
-            # a_t
-            action = agent.act(obs)
-            # o_{t+1}, r_{t+1}
-            obs, r, done, info = env.step(action)
-            t += 1
-            episode_r += r
-            episode_len += 1
-            reset = episode_len == max_episode_len or info.get("needs_reset", False)
-            agent.observe(obs, r, done, reset)
+                # a_t
+                with record_function("act"):
+                    action = agent.act(obs)
+                # o_{t+1}, r_{t+1}
+                with record_function("step"):
+                    obs, r, done, info = env.step(action)
+                t += 1
+                episode_r += r
+                episode_len += 1
+                reset = episode_len == max_episode_len or info.get("needs_reset", False)
+                with record_function("observe"):
+                    agent.observe(obs, r, done, reset)
 
-            for hook in step_hooks:
-                hook(env, agent, t)
+                for hook in step_hooks:
+                    hook(env, agent, t)
 
-            episode_end = done or reset or t == steps
+                episode_end = done or reset or t == steps
 
-            if episode_end:
-                logger.info(
-                    "outdir:%s step:%s episode:%s R:%s",
-                    outdir,
-                    t,
-                    episode_idx,
-                    episode_r,
-                )
-                stats = agent.get_statistics()
-                logger.info("statistics:%s", stats)
-                episode_idx += 1
+                if episode_end:
+                    logger.info(
+                        "outdir:%s step:%s episode:%s R:%s",
+                        outdir,
+                        t,
+                        episode_idx,
+                        episode_r,
+                    )
+                    stats = agent.get_statistics()
+                    logger.info("statistics:%s", stats)
+                    episode_idx += 1
 
-            if evaluator is not None and (episode_end or eval_during_episode):
-                eval_score = evaluator.evaluate_if_necessary(t=t, episodes=episode_idx)
-                if eval_score is not None:
-                    eval_stats = dict(agent.get_statistics())
-                    eval_stats["eval_score"] = eval_score
-                    eval_stats_history.append(eval_stats)
-                if (
-                    successful_score is not None
-                    and evaluator.max_score >= successful_score
-                ):
-                    break
+                if evaluator is not None and (episode_end or eval_during_episode):
+                    eval_score = evaluator.evaluate_if_necessary(t=t, episodes=episode_idx)
+                    if eval_score is not None:
+                        eval_stats = dict(agent.get_statistics())
+                        eval_stats["eval_score"] = eval_score
+                        eval_stats_history.append(eval_stats)
+                    if (
+                        successful_score is not None
+                        and evaluator.max_score >= successful_score
+                    ):
+                        break
 
-            if episode_end:
-                if t == steps:
-                    break
-                # Start a new episode
-                episode_r = 0
-                episode_len = 0
-                obs = env.reset()
-            if checkpoint_freq and t % checkpoint_freq == 0:
-                save_agent(agent, t, outdir, logger, suffix="_checkpoint")
+                if episode_end:
+                    if t == steps:
+                        break
+                    # Start a new episode
+                    episode_r = 0
+                    episode_len = 0
+                    obs = env.reset()
+                if checkpoint_freq and t % checkpoint_freq == 0:
+                    save_agent(agent, t, outdir, logger, suffix="_checkpoint")
+        prof.export_chrome_trace("original_learner.json")
 
     except (Exception, KeyboardInterrupt):
         # Save the current model before being killed

@@ -18,6 +18,7 @@ from pfrl.utils.recurrent import (
     one_step_forward,
     pack_and_forward,
 )
+from torch.autograd.profiler import record_function
 
 
 def _mean_or_nan(xs):
@@ -406,15 +407,16 @@ class PPO(agent.AttributeSavingMixin, agent.BatchAgent):
         self.batch_last_action = [None] * num_envs
 
     def _update_if_dataset_is_ready(self):
-        dataset_size = (
-            sum(len(episode) for episode in self.memory)
-            + len(self.last_episode)
-            + (
-                0
-                if self.batch_last_episode is None
-                else sum(len(episode) for episode in self.batch_last_episode)
+        with record_function("check_dataset"):
+            dataset_size = (
+                sum(len(episode) for episode in self.memory)
+                + len(self.last_episode)
+                + (
+                    0
+                    if self.batch_last_episode is None
+                    else sum(len(episode) for episode in self.batch_last_episode)
+                )
             )
-        )
         if dataset_size >= self.update_interval:
             self._flush_last_episode()
             if self.recurrent:
@@ -431,18 +433,20 @@ class PPO(agent.AttributeSavingMixin, agent.BatchAgent):
                 )
                 self._update_recurrent(dataset)
             else:
-                dataset = _make_dataset(
-                    episodes=self.memory,
-                    model=self.model,
-                    phi=self.phi,
-                    batch_states=self.batch_states,
-                    obs_normalizer=self.obs_normalizer,
-                    gamma=self.gamma,
-                    lambd=self.lambd,
-                    device=self.device,
-                )
+                with record_function("_make_dataset"):
+                    dataset = _make_dataset(
+                        episodes=self.memory,
+                        model=self.model,
+                        phi=self.phi,
+                        batch_states=self.batch_states,
+                        obs_normalizer=self.obs_normalizer,
+                        gamma=self.gamma,
+                        lambd=self.lambd,
+                        device=self.device,
+                    )
                 assert len(dataset) == dataset_size
-                self._update(dataset)
+                with record_function("_update"):
+                    self._update(dataset)
             self.explained_variance = _compute_explained_variance(
                 list(itertools.chain.from_iterable(self.memory))
             )
