@@ -712,10 +712,12 @@ class PPO(agent.AttributeSavingMixin, agent.BatchAgent):
 
     def _batch_act_train(self, batch_obs):
         assert self.training
-        b_state = self.batch_states(batch_obs, self.device, self.phi)
+        with record_function("batch_states"):
+            b_state = self.batch_states(batch_obs, self.device, self.phi)
 
-        if self.obs_normalizer:
-            b_state = self.obs_normalizer(b_state, update=False)
+        with record_function("obs_normalizer"):
+            if self.obs_normalizer:
+                b_state = self.obs_normalizer(b_state, update=False)
 
         num_envs = len(batch_obs)
         if self.batch_last_episode is None:
@@ -725,21 +727,24 @@ class PPO(agent.AttributeSavingMixin, agent.BatchAgent):
         assert len(self.batch_last_action) == num_envs
 
         # action_distrib will be recomputed when computing gradients
-        with torch.no_grad(), pfrl.utils.evaluating(self.model):
-            if self.recurrent:
-                assert self.train_prev_recurrent_states is None
-                self.train_prev_recurrent_states = self.train_recurrent_states
-                (
-                    (action_distrib, batch_value),
-                    self.train_recurrent_states,
-                ) = one_step_forward(
-                    self.model, b_state, self.train_prev_recurrent_states
-                )
-            else:
-                action_distrib, batch_value = self.model(b_state)
-            batch_action = action_distrib.sample().cpu().numpy()
-            self.entropy_record.extend(action_distrib.entropy().cpu().numpy())
-            self.value_record.extend(batch_value.cpu().numpy())
+        with record_function("evaluate"):
+            with torch.no_grad(), pfrl.utils.evaluating(self.model):
+                if self.recurrent:
+                    assert self.train_prev_recurrent_states is None
+                    self.train_prev_recurrent_states = self.train_recurrent_states
+                    (
+                        (action_distrib, batch_value),
+                        self.train_recurrent_states,
+                    ) = one_step_forward(
+                        self.model, b_state, self.train_prev_recurrent_states
+                    )
+                else:
+                    with record_function("forward"):
+                        action_distrib, batch_value = self.model(b_state)
+                with record_function("rest"):
+                    batch_action = action_distrib.sample().cpu().numpy()
+                    self.entropy_record.extend(action_distrib.entropy().cpu().numpy())
+                    self.value_record.extend(batch_value.cpu().numpy())
 
         self.batch_last_state = list(batch_obs)
         self.batch_last_action = list(batch_action)
